@@ -1,0 +1,105 @@
+# Alfhar ERP — Local development override
+#
+# Mounts the alfhar_erp app from the host source tree into the bench
+# and ensures it is installed on the site at startup.
+#
+# This overlay is ONLY for local development and CI testing.
+# Production deploys use a custom image built with alfhar_erp baked in
+# (see frappe_docker/build/apps.json).
+#
+# Usage:
+#   docker compose \
+#     -f frappe_docker/compose.yaml \
+#     -f frappe_docker/overrides/compose.mariadb.yaml \
+#     -f frappe_docker/overrides/compose.redis.yaml \
+#     -f frappe_docker/overrides/compose.alfhar-dev.yaml \
+#     up -d
+#
+# Environment:
+#   SITE_NAME       - Site FQDN to install alfhar_erp into (default: frontend)
+#   FRAPPE_SITE_NAME_HEADER=<SITE_NAME>  (set in .env)
+#
+# Prerequisites:
+#   1. The site must already be created (bench new-site) OR
+#      the configurator service must have completed.
+#   2. erpnext must already be installed on the site.
+#
+# The `alfhar-installer` init container runs `bench install-app` idempotently
+# and exits with 0 — other services start regardless.
+
+x-alfhar-app-volume: &alfhar_app_volume
+  type: bind
+  source: ../apps/alfhar_erp          # relative to frappe_docker/
+  target: /home/frappe/frappe-bench/apps/alfhar_erp
+  read_only: false
+
+services:
+  # ---------------------------------------------------------------------------
+  # Init container: install alfhar_erp into the site, then exit.
+  # Other services start in parallel and wait for their own dependencies.
+  # ---------------------------------------------------------------------------
+  alfhar-installer:
+    image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-${ERPNEXT_VERSION}}
+    pull_policy: ${PULL_POLICY:-missing}
+    restart: "no"
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        SITE="${SITE_NAME:-frontend}"
+        echo "[alfhar-installer] Waiting for site $$SITE to be ready..."
+
+        # Retry up to 30 times (≈ 5 min) for the site to exist
+        for i in $(seq 1 30); do
+          if bench --site "$$SITE" list-apps 2>/dev/null | grep -q frappe; then
+            echo "[alfhar-installer] Site $$SITE is ready."
+            break
+          fi
+          echo "[alfhar-installer] Attempt $$i/30 — site not ready yet, retrying in 10s..."
+          sleep 10
+        done
+
+        # Check if alfhar_erp is already installed
+        if bench --site "$$SITE" list-apps 2>/dev/null | grep -q alfhar_erp; then
+          echo "[alfhar-installer] alfhar_erp is already installed on $$SITE — skipping."
+          exit 0
+        fi
+
+        echo "[alfhar-installer] Installing alfhar_erp on $$SITE ..."
+        bench --site "$$SITE" install-app alfhar_erp
+
+        echo "[alfhar-installer] Running bench migrate to apply fixtures..."
+        bench --site "$$SITE" migrate
+
+        echo "[alfhar-installer] Done."
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - <<: *alfhar_app_volume
+    environment:
+      SITE_NAME: ${FRAPPE_SITE_NAME_HEADER:-frontend}
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    networks:
+      - frappe_network
+
+  # ---------------------------------------------------------------------------
+  # Patch existing services to mount the app source tree.
+  # This allows live code changes without rebuilding the image.
+  # ---------------------------------------------------------------------------
+  backend:
+    volumes:
+      - <<: *alfhar_app_volume
+
+  queue-short:
+    volumes:
+      - <<: *alfhar_app_volume
+
+  queue-long:
+    volumes:
+      - <<: *alfhar_app_volume
+
+  scheduler:
+    volumes:
+      - <<: *alfhar_app_volume
