@@ -101,6 +101,16 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
       - '--web.listen-address=:9093'
+      - '--config.expand-env=true'
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      ALERTMANAGER_EMAIL_TO: ${ALERTMANAGER_EMAIL_TO:-ops@alfhar.com}
+      ALERTMANAGER_EMAIL_FROM: ${ALERTMANAGER_EMAIL_FROM:-alerts@alfhar.com}
+      ALERTMANAGER_SMTP_HOST: ${ALERTMANAGER_SMTP_HOST:-smtp.gmail.com:587}
+      ALERTMANAGER_SMTP_USERNAME: ${ALERTMANAGER_SMTP_USERNAME:-}
+      ALERTMANAGER_SMTP_PASSWORD: ${ALERTMANAGER_SMTP_PASSWORD:-}
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager

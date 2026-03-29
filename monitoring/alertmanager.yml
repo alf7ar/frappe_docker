@@ -1,52 +1,51 @@
-global:
-  # Time to wait before sending a notification again if it has already been sent
-  resolve_timeout: 5m
+# Environment variables used (set in .env or Docker secrets):
+#
+#   ALERTMANAGER_EMAIL_TO        - recipient (e.g. ops@alfhar.com)
+#   ALERTMANAGER_EMAIL_FROM      - sender address (e.g. alerts@alfhar.com)
+#   ALERTMANAGER_SMTP_HOST       - SMTP host:port (e.g. smtp.gmail.com:587)
+#   ALERTMANAGER_SMTP_USERNAME   - SMTP login username
+#   ALERTMANAGER_SMTP_PASSWORD   - SMTP password / app-password
+#
+# These are expanded at startup via --config.expand-env (see compose.monitoring.yaml).
 
-  # Default SMTP settings (configure via environment variables or edit here)
-  # smtp_smarthost: 'smtp.example.com:587'
-  # smtp_from: 'alerts@alfhar.com'
-  # smtp_auth_username: 'alerts@alfhar.com'
-  # smtp_auth_password: '${SMTP_PASSWORD}'
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: '${ALERTMANAGER_SMTP_HOST:-smtp.gmail.com:587}'
+  smtp_from: '${ALERTMANAGER_EMAIL_FROM:-alerts@alfhar.com}'
+  smtp_auth_username: '${ALERTMANAGER_SMTP_USERNAME:-alerts@alfhar.com}'
+  smtp_auth_password: '${ALERTMANAGER_SMTP_PASSWORD}'
+  smtp_require_tls: true
 
 route:
-  # Default receiver for all alerts
-  receiver: 'default'
+  receiver: 'email'
   group_by: ['alertname', 'severity']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
 
   routes:
-    # Critical alerts — faster notification
+    # Critical alerts — faster notification cycle
     - match:
         severity: critical
-      receiver: 'default'
+      receiver: 'email'
       group_wait: 10s
       repeat_interval: 1h
 
 receivers:
-  - name: 'default'
-    # Email notification (uncomment and configure to enable)
-    # email_configs:
-    #   - to: 'ops@alfhar.com'
-    #     subject: '[ALERT] {{ .GroupLabels.alertname }}'
-    #     body: |
-    #       {{ range .Alerts }}
-    #       Alert: {{ .Annotations.summary }}
-    #       Description: {{ .Annotations.description }}
-    #       Severity: {{ .Labels.severity }}
-    #       {{ end }}
-
-    # Webhook notification (uncomment and configure to enable)
-    # webhook_configs:
-    #   - url: 'http://your-webhook-endpoint/alert'
-    #     send_resolved: true
-
-    # Telegram notification (uncomment and configure to enable)
-    # webhook_configs:
-    #   - url: 'https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage'
-    #     http_config:
-    #       bearer_token: '${TELEGRAM_BOT_TOKEN}'
+  - name: 'email'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_TO:-ops@alfhar.com}'
+        send_resolved: true
+        subject: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} — Alfhar ERP'
+        body: |
+          {{ range .Alerts }}
+          Alert:       {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity:    {{ .Labels.severity }}
+          Instance:    {{ .Labels.name }}
+          Status:      {{ .Status }}
+          {{ if eq .Status "resolved" }}Resolved at: {{ .EndsAt }}{{ end }}
+          {{ end }}
 
 inhibit_rules:
   # Inhibit warning alerts when a critical alert is already firing for the same container

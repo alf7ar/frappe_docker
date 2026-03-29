@@ -1,0 +1,59 @@
+# Alfhar ERP — Production Traefik overlay
+#
+# Patches the frontend service to route through Traefik on 80/443 instead of
+# exposing port 8080 directly to the internet.
+#
+# Required environment variables:
+#   TRAEFIK_DOMAIN   - public FQDN (e.g. erp.alfhar.com)
+#   EMAIL            - Let's Encrypt registration email
+#   HASHED_PASSWORD  - Traefik dashboard basic-auth hash
+#                      Generate: echo $(htpasswd -nb admin 'yourpassword') | sed 's/\$/\$\$/g'
+#
+# Full production startup:
+#   docker compose \
+#     -f pwd.yml \
+#     -f overrides/compose.traefik.yaml \
+#     -f overrides/compose.traefik-ssl.yaml \
+#     -f overrides/compose.traefik-ratelimit.yaml \
+#     -f overrides/compose.alfhar-production.yaml \
+#     up -d
+#
+# With monitoring stack:
+#   docker compose \
+#     -f pwd.yml \
+#     -f overrides/compose.traefik.yaml \
+#     -f overrides/compose.traefik-ssl.yaml \
+#     -f overrides/compose.traefik-ratelimit.yaml \
+#     -f overrides/compose.alfhar-production.yaml \
+#     -f overrides/compose.monitoring.yaml \
+#     up -d
+
+services:
+  frontend:
+    # Bind direct port to localhost only — Traefik is the public entry point
+    ports:
+      - "127.0.0.1:8080:8080"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      # Backend definition
+      - traefik.http.services.alfhar-frontend.loadbalancer.server.port=8080
+      # HTTP router — redirect all traffic to HTTPS
+      - traefik.http.routers.alfhar-http.rule=Host(`${TRAEFIK_DOMAIN:?TRAEFIK_DOMAIN not set}`)
+      - traefik.http.routers.alfhar-http.entrypoints=http
+      - traefik.http.routers.alfhar-http.middlewares=https-redirect
+      - traefik.http.routers.alfhar-http.service=alfhar-frontend
+      # HTTPS router — TLS termination with Let's Encrypt
+      - traefik.http.routers.alfhar-https.rule=Host(`${TRAEFIK_DOMAIN}`)
+      - traefik.http.routers.alfhar-https.entrypoints=https
+      - traefik.http.routers.alfhar-https.tls=true
+      - traefik.http.routers.alfhar-https.tls.certresolver=le
+      - traefik.http.routers.alfhar-https.service=alfhar-frontend
+    networks:
+      frappe_network:
+      traefik-public:
+
+networks:
+  traefik-public:
+    name: traefik-public
+    external: false
