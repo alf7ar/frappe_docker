@@ -1,0 +1,61 @@
+groups:
+  - name: container_alerts
+    rules:
+      # Container down (no metrics received for 1 minute)
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name=~"frappe_docker.*"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ERPNext container down"
+          description: "One or more ERPNext containers have been unreachable for more than 1 minute."
+
+      # High disk usage on container filesystems
+      - alert: ContainerDiskHigh
+        expr: >
+          (container_fs_usage_bytes{name=~"frappe_docker.*"} /
+           container_fs_limit_bytes{name=~"frappe_docker.*"}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container disk usage above 80%"
+          description: "Container {{ $labels.name }} disk usage is {{ printf \"%.1f\" $value }}%."
+
+      # High RAM usage
+      - alert: ContainerMemoryHigh
+        expr: >
+          (container_memory_usage_bytes{name=~"frappe_docker.*"} /
+           container_spec_memory_limit_bytes{name=~"frappe_docker.*"} > 0) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container memory usage above 85%"
+          description: "Container {{ $labels.name }} memory usage is {{ printf \"%.1f\" $value }}%."
+
+      # High CPU usage sustained
+      - alert: ContainerCpuHigh
+        expr: >
+          rate(container_cpu_usage_seconds_total{name=~"frappe_docker.*"}[5m]) * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container CPU usage above 90%"
+          description: "Container {{ $labels.name }} CPU usage is {{ printf \"%.1f\" $value }}%."
+
+  - name: host_alerts
+    rules:
+      # Host filesystem nearly full
+      - alert: HostDiskSpaceLow
+        expr: >
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} /
+           node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"}) * 100 < 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk space below 20% free"
+          description: "Filesystem {{ $labels.mountpoint }} has {{ printf \"%.1f\" $value }}% free."

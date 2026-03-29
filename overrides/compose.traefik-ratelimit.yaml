@@ -1,0 +1,54 @@
+# Traefik rate limiting for ERPNext login endpoint
+#
+# Applies a rate limit of 10 requests/minute per source IP on /api/method/login
+# to mitigate brute-force and credential-stuffing attacks.
+#
+# Usage (combine with traefik and main compose):
+#   docker compose \
+#     -f compose.yaml \
+#     -f overrides/compose.traefik.yaml \
+#     -f overrides/compose.traefik-ratelimit.yaml \
+#     up -d
+#
+# Behaviour:
+#   - Requests to /api/method/login beyond 10/minute from the same IP receive HTTP 429
+#   - All other paths are unaffected
+#   - The `login-ratelimit` middleware is applied only to the ERPNext frontend service
+
+services:
+  frontend:
+    labels:
+      # --- Rate limiting middleware definition ---
+      # Average: 10 requests per minute = ~0.167 requests/second
+      - traefik.http.middlewares.login-ratelimit.ratelimit.average=10
+      # Burst: allow a small burst before rate limiting kicks in
+      - traefik.http.middlewares.login-ratelimit.ratelimit.burst=5
+      # Period: per 1 minute window
+      - traefik.http.middlewares.login-ratelimit.ratelimit.period=1m
+      # Source IP-based rate limiting
+      - traefik.http.middlewares.login-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1
+
+      # --- Dedicated router for /api/method/login only ---
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      # Router for the login endpoint — applies rate limiting
+      - traefik.http.routers.erpnext-login.rule=Host(`${SITES_RULE_HOST:-${TRAEFIK_DOMAIN}}`) && Path(`/api/method/login`)
+      - traefik.http.routers.erpnext-login.entrypoints=http
+      - traefik.http.routers.erpnext-login.middlewares=login-ratelimit
+      - traefik.http.routers.erpnext-login.service=erpnext-frontend
+      - traefik.http.routers.erpnext-login.priority=20
+
+      # Main ERPNext router (all other paths, no rate limit)
+      - traefik.http.routers.erpnext.rule=${SITES_RULE:-Host(`${TRAEFIK_DOMAIN}`)}
+      - traefik.http.routers.erpnext.entrypoints=http
+      - traefik.http.routers.erpnext.service=erpnext-frontend
+      - traefik.http.routers.erpnext.priority=10
+
+      # Backend service definition
+      - traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080
+
+networks:
+  traefik-public:
+    name: traefik-public
+    external: false

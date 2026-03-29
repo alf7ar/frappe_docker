@@ -1,0 +1,123 @@
+# Monitoring stack: Prometheus + cAdvisor + Grafana + Alertmanager
+#
+# Usage (with Traefik):
+#   docker compose \
+#     -f compose.yaml \
+#     -f overrides/compose.traefik.yaml \
+#     -f overrides/compose.monitoring.yaml \
+#     up -d
+#
+# Usage (standalone, no Traefik):
+#   docker compose \
+#     -f compose.yaml \
+#     -f overrides/compose.monitoring.yaml \
+#     up -d
+#
+# Environment variables:
+#   GRAFANA_PASSWORD       - Grafana admin password (default: changeme)
+#   GRAFANA_HTPASSWD       - Traefik Basic Auth hash for /grafana/ route
+#                            Generate: echo $(htpasswd -nb admin yourpassword)
+#   TRAEFIK_DOMAIN         - Domain for Traefik routing (required when using Traefik)
+#
+# Grafana is accessible at:
+#   - With Traefik: https://<TRAEFIK_DOMAIN>/grafana/
+#   - Without Traefik: http://localhost:3000
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - monitoring
+    labels:
+      - traefik.enable=false
+    depends_on:
+      - cadvisor
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /cgroup:/cgroup:ro
+    networks:
+      - monitoring
+    labels:
+      - traefik.enable=false
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s/grafana/'
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_LOG_LEVEL: warn
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - monitoring
+      - traefik-public
+    labels:
+      # Traefik routing (active only when traefik override is included)
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      # Route /grafana/ with Basic Auth
+      - traefik.http.routers.grafana.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && PathPrefix(`/grafana`)
+      - traefik.http.routers.grafana.entrypoints=http
+      - traefik.http.routers.grafana.middlewares=grafana-auth
+      - traefik.http.middlewares.grafana-auth.basicauth.users=${GRAFANA_HTPASSWD:-admin:$$apr1$$ruca84Hq$$mbjdMZBAG.KWn7vfN/SNK/}
+      - traefik.http.services.grafana.loadbalancer.server.port=3000
+    ports:
+      # Direct access when not using Traefik
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.listen-address=:9093'
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks:
+      - monitoring
+    labels:
+      - traefik.enable=false
+
+networks:
+  monitoring:
+    name: monitoring
+    driver: bridge
+  traefik-public:
+    name: traefik-public
+    external: false
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:
