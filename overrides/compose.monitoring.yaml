@@ -125,7 +125,7 @@ networks:
     driver: bridge
   traefik-public:
     name: traefik-public
-    external: false
+    external: true
 
 volumes:
   prometheus-data:
