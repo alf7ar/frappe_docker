@@ -1,6 +1,16 @@
 services:
   backend:
-    image: frappe/erpnext:v16.11.0
+    # Custom image with alfhar_erp baked in.
+    # To rebuild locally:
+    #   export APPS_JSON_BASE64=$(base64 -w 0 build/apps.json)
+    #   docker compose -f pwd.yml build --no-cache backend
+    build:
+      context: .
+      dockerfile: images/custom/Containerfile
+      args:
+        FRAPPE_BRANCH: "version-16"
+        APPS_JSON_BASE64: "${APPS_JSON_BASE64:-}"
+    image: alfhar-erpnext:local
     networks:
       - frappe_network
     deploy:
@@ -126,7 +136,7 @@ services:
       - "8080:8080"
 
   queue-long:
-    image: frappe/erpnext:v16.11.0
+    image: alfhar-erpnext:local
     networks:
       - frappe_network
     deploy:
@@ -145,7 +155,7 @@ services:
       FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
 
   queue-short:
-    image: frappe/erpnext:v16.11.0
+    image: alfhar-erpnext:local
     networks:
       - frappe_network
     deploy:
@@ -182,7 +192,7 @@ services:
         condition: on-failure
 
   scheduler:
-    image: frappe/erpnext:v16.11.0
+    image: alfhar-erpnext:local
     networks:
       - frappe_network
     deploy:
@@ -196,7 +206,7 @@ services:
       - logs:/home/frappe/frappe-bench/logs
 
   websocket:
-    image: frappe/erpnext:v16.11.0
+    image: alfhar-erpnext:local
     networks:
       - frappe_network
     deploy:
