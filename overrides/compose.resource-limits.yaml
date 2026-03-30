@@ -1,0 +1,92 @@
+# =============================================================================
+# Resource Limits Overlay (ALF-17 C-2)
+#
+# Prevents any single service from starving the host under load.
+# Apply AFTER the base compose file.
+#
+# Usage (with pwd.yml):
+#   docker compose \
+#     -f frappe_docker/pwd.yml \
+#     -f frappe_docker/overrides/compose.resource-limits.yaml \
+#     up -d
+#
+# Tune values after load testing — these are conservative starting points.
+# =============================================================================
+
+services:
+  backend:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+        reservations:
+          memory: 64m
+
+  websocket:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+        reservations:
+          memory: 64m
+
+  scheduler:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+        reservations:
+          memory: 128m
+
+  queue-short:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+        reservations:
+          memory: 128m
+
+  queue-long:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2g
+        reservations:
+          memory: 256m
+
+  db:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          memory: 512m
+
+  redis-cache:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+
+  redis-queue:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m

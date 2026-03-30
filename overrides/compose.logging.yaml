@@ -1,0 +1,53 @@
+# =============================================================================
+# Log Rotation Overlay (ALF-17 C-3)
+#
+# Applies json-file log rotation to all services to prevent disk exhaustion.
+# Max 5 files × 50 MB = 250 MB per service maximum.
+#
+# Usage:
+#   docker compose \
+#     -f frappe_docker/pwd.yml \
+#     -f frappe_docker/overrides/compose.logging.yaml \
+#     up -d
+#
+# Verify after deploy:
+#   docker inspect frappe_docker-backend-1 --format '{{.HostConfig.LogConfig}}'
+# =============================================================================
+
+x-log-rotation: &log-rotation
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+services:
+  backend:
+    <<: *log-rotation
+
+  configurator:
+    <<: *log-rotation
+
+  frontend:
+    <<: *log-rotation
+
+  websocket:
+    <<: *log-rotation
+
+  scheduler:
+    <<: *log-rotation
+
+  queue-short:
+    <<: *log-rotation
+
+  queue-long:
+    <<: *log-rotation
+
+  db:
+    <<: *log-rotation
+
+  redis-cache:
+    <<: *log-rotation
+
+  redis-queue:
+    <<: *log-rotation
