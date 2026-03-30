@@ -44,6 +44,21 @@ services:
       - traefik.enable=false
     depends_on:
       - cadvisor
+      - node-exporter
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.0
+    restart: unless-stopped
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring
+    labels:
+      - traefik.enable=false
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
