@@ -1,0 +1,60 @@
+# Cloudflare Tunnel overlay
+#
+# Publishes the ERPNext frontend to the internet through a Cloudflare Tunnel,
+# with ZERO open inbound ports on the host. Cloudflare terminates TLS and
+# proxies traffic to the `frontend` container over the internal Docker network.
+#
+# WHY THIS EXISTS
+#   ERPNext/Frappe cannot run on Cloudflare Workers or Pages — it is a stateful,
+#   multi-container Python stack (gunicorn + MariaDB + Redis + socket.io + nginx)
+#   that needs a real Linux host. Cloudflare's role is to sit IN FRONT of that
+#   host. This overlay runs `cloudflared` next to the stack so Cloudflare can
+#   reach the site without you exposing port 8080 (or 80/443) publicly.
+#
+# ONE-TIME SETUP (Cloudflare Zero Trust dashboard)
+#   1. Zero Trust → Networks → Tunnels → Create a tunnel (choose "Cloudflared").
+#   2. Copy the tunnel TOKEN it shows you.
+#   3. Under the tunnel's "Public Hostnames", add a route:
+#        Subdomain/Domain: erp.yourdomain.com
+#        Service:          HTTP  ->  frontend:8080
+#      (The service target is the Docker service name + port; cloudflared reaches
+#       it over `frappe_network`, so no host ports are needed.)
+#   4. Put the token in your environment / .env file:
+#        CLOUDFLARE_TUNNEL_TOKEN=eyJ...   # keep this secret, do not commit it
+#
+# RUN (add this overlay to your normal compose command)
+#   docker compose \
+#     -f pwd.yml \
+#     -f overrides/compose.cloudflared.yaml \
+#     up -d
+#
+#   You can drop any Traefik/nginx-proxy TLS overlays when using the Tunnel —
+#   Cloudflare handles TLS. If you keep Traefik, point the tunnel's public
+#   hostname at the proxy service instead and use Cloudflare "Full (strict)".
+#
+# NOTES
+#   - Since pwd.yml pins FRAPPE_SITE_NAME_HEADER=frontend, the site resolves
+#     regardless of the Host header, so no per-site host_name config is required
+#     to get in. For correct absolute URLs (emails, links), still set the site's
+#     host_name to your domain:
+#       docker compose exec backend bench --site frontend set-config host_name https://erp.yourdomain.com
+#   - The `frontend` service's published `ports:` (8080) can be removed for a
+#     fully closed host; keep it only if you also want direct LAN access.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --protocol http2 run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN not set}"
+    networks:
+      - frappe_network
+    deploy:
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - frontend
+
+networks:
+  frappe_network:
+    name: frappe_network
